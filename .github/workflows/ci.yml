@@ -1,0 +1,167 @@
+name: CI
+
+on:
+  push:
+    branches: main
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  format:
+    name: gofmt
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Check gofmt
+        run: test -z "$(gofmt -l .)" || (gofmt -l . && exit 1)
+
+  lint:
+    name: Lint (${{ matrix.module }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        module: ['.', 'pkg/otelrabbitmq', 'integration']
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: ${{ matrix.module }}/go.mod
+          cache-dependency-path: ${{ matrix.module }}/go.sum
+      # golangci-lint-action v9 supports golangci-lint v2 (see .golangci.yml).
+      - uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.12.2
+          working-directory: ${{ matrix.module }}
+
+  test:
+    name: Unit tests & build (${{ matrix.module }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        module: ['.', 'pkg/otelrabbitmq']
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: ${{ matrix.module }}/go.mod
+          cache-dependency-path: ${{ matrix.module }}/go.sum
+      - name: Build
+        working-directory: ${{ matrix.module }}
+        run: go build ./...
+      - name: Test
+        working-directory: ${{ matrix.module }}
+        run: go test ./...
+
+  race:
+    name: Race tests (${{ matrix.module }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        module: ['.', 'pkg/otelrabbitmq']
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: ${{ matrix.module }}/go.mod
+          cache-dependency-path: ${{ matrix.module }}/go.sum
+      - name: Test with race detector
+        working-directory: ${{ matrix.module }}
+        run: go test -race ./...
+
+  vet:
+    name: Go vet (${{ matrix.module }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        module: ['.', 'pkg/otelrabbitmq', 'integration']
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: ${{ matrix.module }}/go.mod
+          cache-dependency-path: ${{ matrix.module }}/go.sum
+      - name: Vet
+        working-directory: ${{ matrix.module }}
+        run: go vet ./...
+
+  govulncheck:
+    name: govulncheck (${{ matrix.module }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        module: ['.', 'pkg/otelrabbitmq', 'integration']
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: ${{ matrix.module }}/go.mod
+          cache-dependency-path: ${{ matrix.module }}/go.sum
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+      - name: Vulnerability check
+        working-directory: ${{ matrix.module }}
+        run: govulncheck ./...
+
+  installability:
+    name: Module installability
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Verify external module installability
+        run: ./scripts/check-installability.sh
+
+  integration:
+    name: Integration tests (testcontainers)
+    runs-on: ubuntu-latest # GitHub-hosted runners ship Docker, which testcontainers needs.
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: integration/go.mod
+          cache-dependency-path: integration/go.sum
+      - name: Test
+        working-directory: integration
+        run: go test -count=1 ./...
+      - name: Race test
+        working-directory: integration
+        run: go test -race -count=1 ./...
+
+  coverage:
+    name: Combined coverage
+    runs-on: ubuntu-latest # Needs Docker: the integration tests cover most of the core.
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: integration/go.mod
+          cache-dependency-path: integration/go.sum
+      # Merges core-package coverage across the unit and integration suites and
+      # fails if it drops below the floor.
+      - name: Combined coverage
+        run: ./scripts/coverage.sh -check 88
