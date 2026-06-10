@@ -1,0 +1,13 @@
+go 1.26.0
+
+toolchain go1.26.4
+
+use (
+	.
+	./integration
+	./pkg/otelrabbitmq
+)
+
+replace github.com/Midwayne/rabbitmq-go v0.1.0 => .
+
+replace github.com/Midwayne/rabbitmq-go/pkg/otelrabbitmq v0.1.0 => ./pkg/otelrabbitmq

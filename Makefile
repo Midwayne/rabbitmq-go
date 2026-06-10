@@ -3,7 +3,7 @@ UNIT_MODULES := . pkg/otelrabbitmq
 # Every module in the repo (also linted/tidied).
 ALL_MODULES := . pkg/otelrabbitmq integration
 
-.PHONY: test test-race cover cover-all build lint fmt fmt-check tidy vet govulncheck installability integration integration-race check
+.PHONY: test test-race cover cover-all build lint fmt fmt-check tidy vet govulncheck installability integration integration-race check set-version
 
 # --- Unit tests / build (library + otelrabbitmq) ---
 
@@ -60,6 +60,11 @@ govulncheck:
 
 installability:
 	./scripts/check-installability.sh
+
+# Propagates the release version from the VERSION file (the single source of
+# truth) to every file that must carry it: `make set-version v=v0.2.0`.
+set-version:
+	./scripts/set-version.sh $(v)
 
 # --- Integration module ---
 

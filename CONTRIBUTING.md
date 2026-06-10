@@ -51,6 +51,7 @@ A `Makefile` wraps the everyday commands:
 | `make vet`            | `go vet ./...` for all modules                        |
 | `make govulncheck`    | vulnerability scan for all modules                    |
 | `make installability` | verifies core and otel modules from a temp module     |
+| `make set-version`    | propagate `VERSION` to nested `go.mod` requirements   |
 | `make integration`    | End-to-end tests (starts RabbitMQ via testcontainers) |
 | `make check`          | `fmt` + `build` + `test` + `lint` (run before a PR)   |
 

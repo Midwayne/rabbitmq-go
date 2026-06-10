@@ -6,7 +6,10 @@ reliability, or maintainability, but they must be documented in `CHANGELOG.md`.
 ## Checklist
 
 1. Update `CHANGELOG.md` with the release date and notable changes.
-2. Ensure `pkg/otelrabbitmq/go.mod` requires the root module at the version being released, for example `github.com/Midwayne/rabbitmq-go v0.1.0`.
+2. Run `make set-version v=v0.1.0` with the version being released. The
+   `VERSION` file is the single source of truth; the target propagates it to
+   the nested modules' `go.mod` requirements and the `go.work` replace
+   directives (the installability script reads `VERSION` directly).
 3. Run `make fmt-check`.
 4. Run `make test` and `make test-race`.
 5. Run `make vet`, `make lint`, and `make govulncheck`.
