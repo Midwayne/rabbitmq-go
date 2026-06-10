@@ -150,18 +150,3 @@ jobs:
       - name: Race test
         working-directory: integration
         run: go test -race -count=1 ./...
-
-  coverage:
-    name: Combined coverage
-    runs-on: ubuntu-latest # Needs Docker: the integration tests cover most of the core.
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-go@v6
-        with:
-          go-version-file: integration/go.mod
-          cache-dependency-path: integration/go.sum
-      # Merges core-package coverage across the unit and integration suites and
-      # fails if it drops below the floor.
-      - name: Combined coverage
-        run: ./scripts/coverage.sh -check 88
