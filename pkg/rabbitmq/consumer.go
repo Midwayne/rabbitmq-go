@@ -52,9 +52,10 @@ type Message struct {
 // dead-lettered. The connection is re-established automatically on loss.
 // A Consumer is safe for concurrent use.
 type Consumer struct {
-	cfg   Config
-	log   logging.Logger
-	instr Instrumentation
+	cfg        Config
+	log        logging.Logger
+	instr      Instrumentation
+	instrIsNop bool
 
 	connection   *amqp.Connection
 	connMu       sync.RWMutex
@@ -78,12 +79,14 @@ func NewConsumer(ctx context.Context, cfg Config) (*Consumer, error) {
 	cfg = cfg.normalize()
 
 	clientCtx, cancel := context.WithCancel(ctx)
+	instr := cfg.instrumentation()
 	c := &Consumer{
-		cfg:    cfg,
-		log:    cfg.logger(),
-		instr:  cfg.instrumentation(),
-		ctx:    clientCtx,
-		cancel: cancel,
+		cfg:        cfg,
+		log:        cfg.logger(),
+		instr:      instr,
+		instrIsNop: isNopInstrumentation(instr),
+		ctx:        clientCtx,
+		cancel:     cancel,
 	}
 
 	if err := c.connect(); err != nil {
@@ -342,14 +345,18 @@ func (c *Consumer) handleDelivery(
 	if deliveryRoutingKey == "" {
 		deliveryRoutingKey = routingKey
 	}
-	delivery := &DeliveryContext{
-		Queue:      queueName,
-		RoutingKey: deliveryRoutingKey,
-		BodySize:   len(msg.Body),
-		RetryCount: retryCount,
-		Headers:    msg.Headers,
+	ctx := c.ctx
+	var end func(ConsumeResult)
+	if !c.instrIsNop {
+		delivery := &DeliveryContext{
+			Queue:      queueName,
+			RoutingKey: deliveryRoutingKey,
+			BodySize:   len(msg.Body),
+			RetryCount: retryCount,
+			Headers:    msg.Headers,
+		}
+		ctx, end = c.instr.StartConsume(c.ctx, delivery)
 	}
-	ctx, end := c.instr.StartConsume(c.ctx, delivery)
 
 	var result ConsumeResult
 	if handlerErr := c.callHandler(ctx, msg, retryCount, handler); handlerErr != nil {
@@ -366,7 +373,9 @@ func (c *Consumer) handleDelivery(
 		_ = msg.Ack(false)
 		result.Acked = true
 	}
-	end(result)
+	if end != nil {
+		end(result)
+	}
 }
 
 func (c *Consumer) callHandler(

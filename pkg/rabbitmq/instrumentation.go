@@ -75,6 +75,17 @@ type ConsumeResult struct {
 // metrics, or propagation.
 type NopInstrumentation struct{}
 
+// isNopInstrumentation reports whether instr is the no-op default, letting hot
+// paths skip per-message instrumentation contexts and header tables entirely.
+func isNopInstrumentation(instr Instrumentation) bool {
+	switch instr.(type) {
+	case NopInstrumentation, *NopInstrumentation:
+		return true
+	default:
+		return false
+	}
+}
+
 // StartPublish implements Instrumentation.
 func (NopInstrumentation) StartPublish(
 	ctx context.Context,

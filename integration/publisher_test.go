@@ -35,7 +35,7 @@ func TestPublisherDeliversConfirmedMessage(t *testing.T) {
 		t.Fatalf("Publish: %v", err)
 	}
 
-	msg, ok := getMessage(t, ch, topo.queue, defaultTimeout)
+	msg, ok := getMessage(t, ch, topo.queue)
 	if !ok {
 		t.Fatal("no message delivered to the bound queue")
 	}
@@ -88,7 +88,7 @@ func TestPublisherPublishMessagePreservesProperties(t *testing.T) {
 		t.Fatalf("PublishMessage: %v", err)
 	}
 
-	msg, ok := getMessage(t, ch, topo.queue, defaultTimeout)
+	msg, ok := getMessage(t, ch, topo.queue)
 	if !ok {
 		t.Fatal("no message delivered")
 	}
@@ -180,7 +180,7 @@ func TestPublisherPublishToNonDefaultExchange(t *testing.T) {
 		t.Fatalf("PublishMessage to non-default exchange: %v", err)
 	}
 
-	msg, ok := getMessage(t, ch, otherQueue, defaultTimeout)
+	msg, ok := getMessage(t, ch, otherQueue)
 	if !ok || string(msg.Body) != "routed" {
 		t.Fatalf("message not delivered to non-default exchange (ok=%v body=%q)", ok, msg.Body)
 	}
@@ -527,5 +527,71 @@ func TestPublisherMaxChannelAgeUsesCreationTime(t *testing.T) {
 	defer pub.ReturnChannel(ch3)
 	if ch3 == ch1 {
 		t.Fatal("channel was reused after total MaxChannelAge elapsed")
+	}
+}
+
+func TestPublisherDeclareQueueTopologyBuffersBeforeConsumer(t *testing.T) {
+	url := brokerURL(t)
+	conn := adminConn(t, url)
+	topo := newTopology(t, conn)
+
+	pub, err := rabbitmq.NewPublisher(rabbitmq.Config{
+		URL:      url,
+		Exchange: topo.exchange,
+	})
+	if err != nil {
+		t.Fatalf("NewPublisher: %v", err)
+	}
+	defer pub.Close()
+
+	if err := pub.DeclareQueueTopology(topo.queue, topo.routingKey); err != nil {
+		t.Fatalf("DeclareQueueTopology: %v", err)
+	}
+	// Redeclaring must be a no-op, not a precondition conflict.
+	if err := pub.DeclareQueueTopology(topo.queue, topo.routingKey); err != nil {
+		t.Fatalf("DeclareQueueTopology (redeclare): %v", err)
+	}
+
+	// With no consumer ever attached, a published message is buffered in the
+	// declared queue instead of being dropped as unroutable.
+	body := []byte(`{"buffered":true}`)
+	if err := pub.Publish(testContext(t), topo.exchange, topo.routingKey, body, true); err != nil {
+		t.Fatalf("Publish: %v", err)
+	}
+	ch := adminChannel(t, conn)
+	msg, ok := getMessage(t, ch, topo.queue)
+	if !ok {
+		t.Fatal("message was not buffered in the publisher-declared queue")
+	}
+	if string(msg.Body) != string(body) {
+		t.Errorf("body = %q, want %q", msg.Body, body)
+	}
+
+	// A consumer attaching later declares the same topology and must not hit
+	// a precondition conflict with the publisher's declaration.
+	consumer, err := rabbitmq.NewConsumer(testContext(t), rabbitmq.Config{
+		URL:           url,
+		Exchange:      topo.exchange,
+		PrefetchCount: 1,
+	})
+	if err != nil {
+		t.Fatalf("NewConsumer: %v", err)
+	}
+	defer consumer.Close()
+
+	got := make(chan string, 1)
+	go func() {
+		_ = consumer.Consume(topo.queue, topo.routingKey, func(_ context.Context, msg rabbitmq.Message) error {
+			got <- string(msg.Body)
+			return nil
+		})
+	}()
+
+	const second = `{"after":"consumer"}`
+	if err := pub.Publish(testContext(t), topo.exchange, topo.routingKey, []byte(second), true); err != nil {
+		t.Fatalf("Publish after consumer: %v", err)
+	}
+	if !waitForBody(t, got, second, defaultTimeout) {
+		t.Fatal("consumer did not receive message after redeclaring the topology")
 	}
 }

@@ -8,7 +8,7 @@ go 1.26.0
 toolchain go1.26.4
 
 require (
-	github.com/Midwayne/rabbitmq-go v0.1.0
+	github.com/Midwayne/rabbitmq-go v0.1.1
 	github.com/rabbitmq/amqp091-go v1.11.0
 	go.opentelemetry.io/otel v1.44.0
 	go.opentelemetry.io/otel/metric v1.44.0

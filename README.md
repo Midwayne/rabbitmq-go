@@ -81,6 +81,21 @@ for ensuring that exchange exists.
 but callers must not use borrowed channels concurrently and must return each
 borrowed channel exactly once.
 
+When queues must exist before any consumer has started — so early publishes
+are buffered instead of dropped as unroutable — declare them from the
+publisher side:
+
+```go
+if err := pub.DeclareQueueTopology("events-worker", "user.created"); err != nil {
+    log.Fatal(err)
+}
+```
+
+`DeclareQueueTopology` declares the same durable queue, bindings, and
+dead-letter topology a `Consumer` declares in `Consume`, so whichever side
+declares first, the other redeclares without a conflict. Declarations are
+idempotent.
+
 ## Consuming
 
 ```go

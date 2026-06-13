@@ -47,7 +47,6 @@ func (p *publisher) warmChannelPool() {
 			warmed++
 		} else {
 			_ = pch.ch.Close()
-			p.channelMeta.Delete(pch.ch)
 		}
 	}
 
@@ -64,9 +63,7 @@ func (p *publisher) createPooledChannel() *pooledChannel {
 	if ch == nil {
 		return nil
 	}
-	createdAt := time.Now()
-	p.channelMeta.Store(ch, createdAt)
-	return &pooledChannel{ch: ch, createdAt: createdAt}
+	return &pooledChannel{ch: ch, createdAt: time.Now()}
 }
 
 // createConfirmChannel opens a channel and enables publisher confirms, each
@@ -147,8 +144,10 @@ func (p *publisher) createConfirmChannel() *amqp.Channel {
 	return ch
 }
 
-// GetChannel borrows a channel from the pool, replacing stale or closed ones.
-func (p *publisher) GetChannel() (*amqp.Channel, error) {
+// borrowChannel borrows a pooled channel, replacing stale or closed ones. The
+// internal publish path keeps the *pooledChannel wrapper so returning it needs
+// no channelMeta lookups or allocations.
+func (p *publisher) borrowChannel() (*pooledChannel, error) {
 	if p.closed.Load() {
 		return nil, errors.New("rabbitmq: publisher is closed")
 	}
@@ -168,19 +167,31 @@ func (p *publisher) GetChannel() (*amqp.Channel, error) {
 			p.channelMeta.Delete(pch.ch)
 			return p.newChannelOrError()
 		}
-		return pch.ch, nil
+		return pch, nil
 	default:
 		p.poolMu.RUnlock()
 		return p.newChannelOrError()
 	}
 }
 
-func (p *publisher) newChannelOrError() (*amqp.Channel, error) {
-	ch := p.createConfirmChannel()
-	if ch == nil {
+func (p *publisher) newChannelOrError() (*pooledChannel, error) {
+	pch := p.createPooledChannel()
+	if pch == nil {
 		return nil, errors.New("rabbitmq: failed to create channel")
 	}
-	return ch, nil
+	return pch, nil
+}
+
+// GetChannel borrows a channel from the pool, replacing stale or closed ones.
+func (p *publisher) GetChannel() (*amqp.Channel, error) {
+	pch, err := p.borrowChannel()
+	if err != nil {
+		return nil, err
+	}
+	// Record the creation time so ReturnChannel can restore the age of a
+	// channel handed out through this bare-channel API.
+	p.channelMeta.Store(pch.ch, pch.createdAt)
+	return pch.ch, nil
 }
 
 // ReturnChannel returns a channel to the pool, closing it if the pool is full
@@ -190,18 +201,24 @@ func (p *publisher) ReturnChannel(ch *amqp.Channel) {
 		p.channelMeta.Delete(ch)
 		return
 	}
-	if p.closed.Load() {
-		_ = ch.Close()
-		p.channelMeta.Delete(ch)
-		return
-	}
 	createdAt := time.Now()
-	if v, loaded := p.channelMeta.LoadOrStore(ch, createdAt); loaded {
+	if v, ok := p.channelMeta.Load(ch); ok {
 		if t, ok := v.(time.Time); ok {
 			createdAt = t
 		}
 	}
-	pch := &pooledChannel{ch: ch, createdAt: createdAt}
+	p.returnPooled(&pooledChannel{ch: ch, createdAt: createdAt})
+}
+
+// returnPooled returns a borrowed channel to the pool, closing it if the pool
+// is full, replaced, or the publisher is closed.
+func (p *publisher) returnPooled(pch *pooledChannel) {
+	ch := pch.ch
+	if ch.IsClosed() || p.closed.Load() {
+		_ = ch.Close()
+		p.channelMeta.Delete(ch)
+		return
+	}
 	p.poolMu.RLock()
 	pool := p.channelPool
 	if pool == nil {

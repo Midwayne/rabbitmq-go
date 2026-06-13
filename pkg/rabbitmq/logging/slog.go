@@ -24,11 +24,11 @@ func (l *SlogLogger) log(ctx context.Context, level slog.Level, msg string, fiel
 	if !l.logger.Enabled(ctx, level) {
 		return
 	}
-	attrs := make([]any, 0, len(fields))
+	attrs := make([]slog.Attr, 0, len(fields))
 	for _, f := range fields {
 		attrs = append(attrs, slog.Any(f.Key, f.Value))
 	}
-	l.logger.Log(ctx, level, msg, attrs...)
+	l.logger.LogAttrs(ctx, level, msg, attrs...)
 }
 
 // Debug implements Logger.

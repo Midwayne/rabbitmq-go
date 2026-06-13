@@ -7,17 +7,16 @@ import (
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
-// declareConsumerTopology declares the (optional) dead-letter exchange/queue,
-// the main queue, binds them, and starts a consumer. It returns the delivery
-// stream and the channel-close notification.
-func (c *Consumer) declareConsumerTopology(
-	ch *amqp.Channel,
-	queueName, routingKey string,
-) (<-chan amqp.Delivery, <-chan *amqp.Error, error) {
+// declareQueueTopology declares the durable queue bound to routingKey on
+// cfg.Exchange, preceded by the dead-letter exchange/queue unless
+// cfg.DisableDeadLetter is set. It is the single source of truth for queue
+// arguments: consumers and publishers both declare through it, so either side
+// can declare first and the other redeclares without a precondition conflict.
+func declareQueueTopology(ch *amqp.Channel, cfg Config, queueName, routingKey string) error {
 	var queueArgs amqp.Table
 
-	if !c.cfg.DisableDeadLetter {
-		dlxName := c.cfg.Exchange + c.cfg.DeadLetterExchangeSuffix
+	if !cfg.DisableDeadLetter {
+		dlxName := cfg.Exchange + cfg.DeadLetterExchangeSuffix
 		if err := ch.ExchangeDeclare(
 			dlxName,
 			deadLetterExchangeType,
@@ -27,15 +26,15 @@ func (c *Consumer) declareConsumerTopology(
 			false,
 			nil,
 		); err != nil {
-			return nil, nil, fmt.Errorf("declare dead-letter exchange: %w", err)
+			return fmt.Errorf("declare dead-letter exchange: %w", err)
 		}
 
-		dlqName := queueName + c.cfg.DeadLetterQueueSuffix
+		dlqName := queueName + cfg.DeadLetterQueueSuffix
 		if _, err := ch.QueueDeclare(dlqName, true, false, false, false, nil); err != nil {
-			return nil, nil, fmt.Errorf("declare dead-letter queue: %w", err)
+			return fmt.Errorf("declare dead-letter queue: %w", err)
 		}
 		if err := ch.QueueBind(dlqName, routingKey, dlxName, false, nil); err != nil {
-			return nil, nil, fmt.Errorf("bind dead-letter queue: %w", err)
+			return fmt.Errorf("bind dead-letter queue: %w", err)
 		}
 
 		queueArgs = amqp.Table{
@@ -44,16 +43,28 @@ func (c *Consumer) declareConsumerTopology(
 		}
 	}
 
-	q, err := ch.QueueDeclare(queueName, true, false, false, false, queueArgs)
-	if err != nil {
-		return nil, nil, wrapQueueDeclareErr(queueName, err)
+	if _, err := ch.QueueDeclare(queueName, true, false, false, false, queueArgs); err != nil {
+		return wrapQueueDeclareErr(queueName, err)
 	}
 
-	if err := ch.QueueBind(q.Name, routingKey, c.cfg.Exchange, false, nil); err != nil {
-		return nil, nil, fmt.Errorf("bind queue: %w", err)
+	if err := ch.QueueBind(queueName, routingKey, cfg.Exchange, false, nil); err != nil {
+		return fmt.Errorf("bind queue: %w", err)
 	}
 
-	msgs, err := ch.Consume(q.Name, "", false, false, false, false, nil)
+	return nil
+}
+
+// declareConsumerTopology declares the queue topology and starts a consumer.
+// It returns the delivery stream and the channel-close notification.
+func (c *Consumer) declareConsumerTopology(
+	ch *amqp.Channel,
+	queueName, routingKey string,
+) (<-chan amqp.Delivery, <-chan *amqp.Error, error) {
+	if err := declareQueueTopology(ch, c.cfg, queueName, routingKey); err != nil {
+		return nil, nil, err
+	}
+
+	msgs, err := ch.Consume(queueName, "", false, false, false, false, nil)
 	if err != nil {
 		return nil, nil, err
 	}

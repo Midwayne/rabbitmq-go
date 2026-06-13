@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This project follows semantic versioning after v1. Before v1, APIs may change
 when needed for correctness and maintainability.
 
+## [Unreleased]
+
+## [0.1.1] - 2026-06-13
+
+### Added
+
+- `Publisher.DeclareQueueTopology` declares a durable queue, its binding, and
+  its dead-letter topology from the publisher side — argument-identical to
+  what `Consumer` declares in `Consume` — so messages published before any
+  consumer has started are buffered instead of dropped as unroutable.
+
 ## [0.1.0] - 2026-06-10
 
 Initial release.
@@ -62,4 +73,6 @@ Initial release.
     `govulncheck`, merged unit+integration coverage (`cover-all`) and an
     external-module installability check, wired into GitHub Actions CI.
 
+[Unreleased]: https://github.com/Midwayne/rabbitmq-go/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/Midwayne/rabbitmq-go/releases/tag/v0.1.2
 [0.1.0]: https://github.com/Midwayne/rabbitmq-go/releases/tag/v0.1.0

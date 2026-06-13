@@ -189,11 +189,15 @@ func (in *instrumentation) StartConsume(
 			attribute.Bool("messaging.rabbitmq.retried", res.Retried),
 		}
 		span.SetAttributes(attrs...)
-		in.metrics.messages.Add(ctx, 1, metric.WithAttributes(attrs...))
+		// Build the attribute set once so the counter and histogram do not each
+		// sort and deduplicate the same attributes. NewSet may reorder attrs, so
+		// it must come after span.SetAttributes.
+		metricAttrs := metric.WithAttributeSet(attribute.NewSet(attrs...))
+		in.metrics.messages.Add(ctx, 1, metricAttrs)
 		in.metrics.duration.Record(
 			ctx,
 			time.Since(startedAt).Seconds(),
-			metric.WithAttributes(attrs...),
+			metricAttrs,
 		)
 		if res.DeadLettered {
 			in.metrics.deadLetter.Add(ctx, 1, metric.WithAttributes(

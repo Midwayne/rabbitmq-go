@@ -107,15 +107,14 @@ func bindQueue(t *testing.T, ch *amqp.Channel, exchange, routingKey, queue strin
 	}
 }
 
-// getMessage polls queue for a single message until timeout.
+// getMessage polls queue for a single message until defaultTimeout.
 func getMessage(
 	t *testing.T,
 	ch *amqp.Channel,
 	queue string,
-	timeout time.Duration,
 ) (amqp.Delivery, bool) {
 	t.Helper()
-	deadline := time.Now().Add(timeout)
+	deadline := time.Now().Add(defaultTimeout)
 	for time.Now().Before(deadline) {
 		msg, ok, err := ch.Get(queue, true)
 		if err != nil {
@@ -145,8 +144,7 @@ func queueDepth(t *testing.T, conn *amqp.Connection, queue string) int {
 	return q.Messages
 }
 
-// queueExists reports whether a queue is present, without failing the test. It
-// is used to wait until a Consumer has declared its topology before publishing.
+// queueExists reports whether a queue is present, without failing the test.
 func queueExists(conn *amqp.Connection, name string) bool {
 	ch, err := conn.Channel()
 	if err != nil {
@@ -155,6 +153,20 @@ func queueExists(conn *amqp.Connection, name string) bool {
 	defer func() { _ = ch.Close() }()
 	_, err = ch.QueueDeclarePassive(name, true, false, false, false, nil)
 	return err == nil
+}
+
+// queueHasConsumer reports whether a queue exists and has at least one active
+// consumer. A Consumer declares the queue, binds it, and then starts consuming,
+// so a registered consumer guarantees the binding exists and publishes are
+// routable; the bare queueExists check races the bind and can lose messages.
+func queueHasConsumer(conn *amqp.Connection, name string) bool {
+	ch, err := conn.Channel()
+	if err != nil {
+		return false
+	}
+	defer func() { _ = ch.Close() }()
+	q, err := ch.QueueDeclarePassive(name, true, false, false, false, nil)
+	return err == nil && q.Consumers > 0
 }
 
 // publish sends a single persistent message straight to an exchange, bypassing

@@ -38,8 +38,8 @@ func startConsumer(
 	go func() { _ = consumer.Consume(topo.queue, topo.routingKey, handler) }()
 
 	conn := adminConn(t, url)
-	if !waitFor(t, func() bool { return queueExists(conn, topo.queue) }) {
-		t.Fatal("consumer did not declare its queue in time")
+	if !waitFor(t, func() bool { return queueHasConsumer(conn, topo.queue) }) {
+		t.Fatal("consumer did not start consuming its queue in time")
 	}
 }
 
@@ -269,8 +269,8 @@ func TestConsumerConsumeBodyDeliversBody(t *testing.T) {
 			},
 		)
 	}()
-	if !waitFor(t, func() bool { return queueExists(conn, topo.queue) }) {
-		t.Fatal("consumer did not declare its queue in time")
+	if !waitFor(t, func() bool { return queueHasConsumer(conn, topo.queue) }) {
+		t.Fatal("consumer did not start consuming its queue in time")
 	}
 
 	publish(t, conn, topo.exchange, topo.routingKey, []byte("hello-body"))

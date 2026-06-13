@@ -33,6 +33,12 @@ type Publisher interface {
 	// msg.Exchange is empty, Config.Exchange is used. The configured
 	// Instrumentation may mutate msg.Headers to inject propagation data.
 	PublishMessage(ctx context.Context, msg PublishMessage) error
+	// DeclareQueueTopology declares queueName as a durable queue bound to
+	// routingKey on Config.Exchange, including the dead-letter exchange and
+	// queue unless Config.DisableDeadLetter is set — exactly the topology a
+	// Consumer declares in Consume. Call it when queues must exist (and buffer
+	// messages) before any consumer has started. Declarations are idempotent.
+	DeclareQueueTopology(queueName, routingKey string) error
 	// GetChannel borrows a confirm-enabled channel from the pool for advanced
 	// use. This API is intentionally low-level: callers must not use the channel
 	// concurrently, must preserve confirm mode invariants, and must return it with
@@ -46,9 +52,10 @@ type Publisher interface {
 }
 
 type publisher struct {
-	cfg   Config
-	log   logging.Logger
-	instr Instrumentation
+	cfg        Config
+	log        logging.Logger
+	instr      Instrumentation
+	instrIsNop bool
 
 	connection   *amqp.Connection
 	channelPool  chan *pooledChannel
@@ -118,11 +125,13 @@ func NewPublisher(cfg Config) (Publisher, error) {
 	}
 	cfg = cfg.normalize()
 
+	instr := cfg.instrumentation()
 	p := &publisher{
-		cfg:       cfg,
-		log:       cfg.logger(),
-		instr:     cfg.instrumentation(),
-		closeChan: make(chan struct{}),
+		cfg:        cfg,
+		log:        cfg.logger(),
+		instr:      instr,
+		instrIsNop: isNopInstrumentation(instr),
+		closeChan:  make(chan struct{}),
 	}
 
 	if err := p.connect(); err != nil {
@@ -220,6 +229,9 @@ func (p *publisher) PublishMessage(ctx context.Context, msg PublishMessage) erro
 		ctx = context.Background()
 	}
 	msg = p.normalizePublishMessage(msg)
+	if p.instrIsNop {
+		return p.publish(ctx, &msg)
+	}
 	pubCtx := &PublishContext{
 		Exchange:   msg.Exchange,
 		RoutingKey: msg.RoutingKey,
@@ -228,7 +240,7 @@ func (p *publisher) PublishMessage(ctx context.Context, msg PublishMessage) erro
 	}
 	ctx, end := p.instr.StartPublish(ctx, pubCtx)
 
-	err := p.publish(ctx, msg)
+	err := p.publish(ctx, &msg)
 	end(err)
 	return err
 }
@@ -237,7 +249,10 @@ func (p *publisher) normalizePublishMessage(msg PublishMessage) PublishMessage {
 	if msg.Exchange == "" {
 		msg.Exchange = p.cfg.Exchange
 	}
-	if msg.Headers == nil {
+	// Instrumentation needs a non-nil table to inject propagation headers into;
+	// without instrumentation a nil table is left as is (it encodes identically
+	// on the wire).
+	if msg.Headers == nil && !p.instrIsNop {
 		msg.Headers = amqp.Table{}
 	}
 	if msg.ContentType == "" {
@@ -251,16 +266,17 @@ func (p *publisher) normalizePublishMessage(msg PublishMessage) PublishMessage {
 
 func (p *publisher) publish(
 	ctx context.Context,
-	msg PublishMessage,
+	msg *PublishMessage,
 ) error {
-	ch, err := p.GetChannel()
+	pch, err := p.borrowChannel()
 	if err != nil {
 		return err
 	}
+	ch := pch.ch
 	returnToPool := true
 	defer func() {
 		if returnToPool {
-			p.ReturnChannel(ch)
+			p.returnPooled(pch)
 			return
 		}
 		_ = ch.Close()
@@ -335,7 +351,7 @@ func returnedMessage(ret amqp.Return) ReturnedMessage {
 func (p *publisher) publishOnChannel(
 	ctx context.Context,
 	ch *amqp.Channel,
-	msg PublishMessage,
+	msg *PublishMessage,
 	pub amqp.Publishing,
 ) error {
 	if !msg.WaitForConfirm {
@@ -382,6 +398,16 @@ func (p *publisher) publishOnChannel(
 		return errors.New("rabbitmq: message was not acknowledged by broker")
 	}
 	return nil
+}
+
+// DeclareQueueTopology implements Publisher.
+func (p *publisher) DeclareQueueTopology(queueName, routingKey string) error {
+	ch, err := p.GetChannel()
+	if err != nil {
+		return err
+	}
+	defer p.ReturnChannel(ch)
+	return declareQueueTopology(ch, p.cfg, queueName, routingKey)
 }
 
 // Close implements Publisher.
