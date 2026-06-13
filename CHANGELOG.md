@@ -73,6 +73,6 @@ Initial release.
     `govulncheck`, merged unit+integration coverage (`cover-all`) and an
     external-module installability check, wired into GitHub Actions CI.
 
-[Unreleased]: https://github.com/Midwayne/rabbitmq-go/compare/v0.1.2...HEAD
-[0.1.2]: https://github.com/Midwayne/rabbitmq-go/releases/tag/v0.1.2
+[Unreleased]: https://github.com/Midwayne/rabbitmq-go/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/Midwayne/rabbitmq-go/releases/tag/v0.1.1
 [0.1.0]: https://github.com/Midwayne/rabbitmq-go/releases/tag/v0.1.0
