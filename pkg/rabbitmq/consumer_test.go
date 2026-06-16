@@ -24,6 +24,20 @@ func TestConsumeBodyRejectsNilHandler(t *testing.T) {
 	}
 }
 
+func TestConsumeConcurrentRejectsNilHandler(t *testing.T) {
+	c := &Consumer{ctx: context.Background()}
+	if err := c.ConsumeConcurrent("q", "rk", 2, nil); err == nil {
+		t.Fatal("ConsumeConcurrent nil handler = nil, want error")
+	}
+}
+
+func TestConsumeBodyConcurrentRejectsNilHandler(t *testing.T) {
+	c := &Consumer{ctx: context.Background()}
+	if err := c.ConsumeBodyConcurrent("q", "rk", 2, nil); err == nil {
+		t.Fatal("ConsumeBodyConcurrent nil handler = nil, want error")
+	}
+}
+
 func TestNewConsumerValidatesConfig(t *testing.T) {
 	if _, err := NewConsumer(context.Background(), Config{}); err == nil {
 		t.Error("NewConsumer with an empty config should error")
@@ -62,6 +76,48 @@ func TestConsumeReturnsOnCancelledContext(t *testing.T) {
 		func(context.Context, Message) error { return nil },
 	); err != nil {
 		t.Errorf("Consume with a cancelled context = %v, want nil", err)
+	}
+}
+
+func TestConsumeConcurrentReturnsOnCancelledContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	c := &Consumer{ctx: ctx, log: Config{}.logger()}
+	if err := c.ConsumeConcurrent(
+		"q",
+		"rk",
+		2,
+		func(context.Context, Message) error { return nil },
+	); err != nil {
+		t.Errorf("ConsumeConcurrent with a cancelled context = %v, want nil", err)
+	}
+}
+
+func TestConsumeBodyConcurrentReturnsOnCancelledContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	c := &Consumer{ctx: ctx, log: Config{}.logger()}
+	if err := c.ConsumeBodyConcurrent(
+		"q",
+		"rk",
+		2,
+		func(context.Context, []byte) error { return nil },
+	); err != nil {
+		t.Errorf("ConsumeBodyConcurrent with a cancelled context = %v, want nil", err)
+	}
+}
+
+func TestConsumeBodyConcurrentFallsBackToSequentialForOneWorker(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	c := &Consumer{ctx: ctx, log: Config{}.logger()}
+	if err := c.ConsumeBodyConcurrent(
+		"q",
+		"rk",
+		1,
+		func(context.Context, []byte) error { return nil },
+	); err != nil {
+		t.Errorf("ConsumeBodyConcurrent with one worker = %v, want nil", err)
 	}
 }
 

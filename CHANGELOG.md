@@ -8,6 +8,18 @@ when needed for correctness and maintainability.
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-06-17
+
+### Added
+
+- `Consumer.ConsumeConcurrent` for bounded concurrent message handling while
+  preserving the same ack, retry and dead-letter semantics as `Consume`.
+- `Consumer.ConsumeBodyConcurrent` body-only adapter for concurrent consumers.
+  `workers <= 1` falls back to the sequential `ConsumeBody` path.
+- Broker-backed integration coverage for concurrent body consumers, including
+  parallel handler execution, effective prefetch raising, retry handling and
+  dead-lettering on exhausted concurrent failures.
+
 ## [0.1.1] - 2026-06-13
 
 ### Added
@@ -73,6 +85,7 @@ Initial release.
     `govulncheck`, merged unit+integration coverage (`cover-all`) and an
     external-module installability check, wired into GitHub Actions CI.
 
-[Unreleased]: https://github.com/Midwayne/rabbitmq-go/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/Midwayne/rabbitmq-go/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/Midwayne/rabbitmq-go/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/Midwayne/rabbitmq-go/releases/tag/v0.1.1
 [0.1.0]: https://github.com/Midwayne/rabbitmq-go/releases/tag/v0.1.0

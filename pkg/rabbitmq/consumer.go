@@ -277,6 +277,73 @@ func (c *Consumer) ConsumeBody(queueName, routingKey string, handler MessageHand
 	})
 }
 
+// ConsumeConcurrent behaves like Consume but dispatches up to workers deliveries
+// to handler concurrently, instead of one-at-a-time. Use it when a handler must
+// block across deliveries (e.g. to accumulate a batch) without starving the
+// consume loop — with the sequential Consume, a blocking handler would prevent
+// any further delivery from arriving. Prefetch is raised to at least workers so
+// the broker keeps the pool fed. Ack/nack/retry semantics are per-delivery and
+// identical to Consume (the amqp channel serialises sends, and retries use
+// per-publish deferred confirms, so concurrent handling is safe). workers <= 1
+// falls back to Consume. Call it in its own goroutine, once per queue.
+func (c *Consumer) ConsumeConcurrent(
+	queueName, routingKey string,
+	workers int,
+	handler Handler,
+) error {
+	if handler == nil {
+		return errors.New("rabbitmq: nil message handler")
+	}
+	if workers <= 1 {
+		return c.Consume(queueName, routingKey, handler)
+	}
+	c.wg.Add(1)
+	defer c.wg.Done()
+
+	for {
+		select {
+		case <-c.ctx.Done():
+			return nil
+		default:
+		}
+
+		err := c.consumeOnceConcurrent(queueName, routingKey, workers, handler)
+		if err != nil {
+			if errors.Is(err, context.Canceled) {
+				return nil
+			}
+			c.log.Error(
+				c.ctx,
+				"consumer error, restarting",
+				logging.Err(err),
+				logging.String("queue", queueName),
+			)
+			if err := sleepContext(c.ctx, consumerRestartSleep); err != nil {
+				return nil
+			}
+		}
+	}
+}
+
+// ConsumeBodyConcurrent is the body-only adapter for ConsumeConcurrent.
+func (c *Consumer) ConsumeBodyConcurrent(
+	queueName, routingKey string,
+	workers int,
+	handler MessageHandler,
+) error {
+	if handler == nil {
+		return errors.New("rabbitmq: nil message handler")
+	}
+	return c.ConsumeConcurrent(
+		queueName,
+		routingKey,
+		workers,
+		func(ctx context.Context, msg Message) error {
+			return handler(ctx, msg.Body)
+		},
+	)
+}
+
 // consumeOnce runs a single consumer session until the channel or connection
 // drops.
 func (c *Consumer) consumeOnce(queueName, routingKey string, handler Handler) error {
@@ -329,6 +396,91 @@ func (c *Consumer) consumeOnce(queueName, routingKey string, handler Handler) er
 				return errors.New("rabbitmq: message channel closed")
 			}
 			c.handleDelivery(ch, queueName, routingKey, msg, handler)
+		}
+	}
+}
+
+// consumeOnceConcurrent is consumeOnce with a bounded worker pool: each delivery
+// is handled in its own goroutine (up to workers at a time). In-flight handlers
+// are drained before the channel closes, so an in-progress ack never races the
+// channel teardown.
+func (c *Consumer) consumeOnceConcurrent(
+	queueName, routingKey string,
+	workers int,
+	handler Handler,
+) error {
+	c.connMu.RLock()
+	conn := c.connection
+	c.connMu.RUnlock()
+
+	if conn == nil || conn.IsClosed() {
+		return errors.New("rabbitmq: connection not available")
+	}
+
+	ch, err := conn.Channel()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = ch.Close() }()
+
+	prefetch := max(c.cfg.PrefetchCount, workers)
+	if err := ch.Qos(prefetch, 0, false); err != nil {
+		return err
+	}
+	if c.cfg.MaxRetries > 0 {
+		if err := ch.Confirm(false); err != nil {
+			return fmt.Errorf("enable confirms for retry publisher: %w", err)
+		}
+	}
+
+	msgs, chanClose, err := c.declareConsumerTopology(ch, queueName, routingKey)
+	if err != nil {
+		return err
+	}
+
+	c.log.Info(
+		c.ctx,
+		"started consuming (concurrent)",
+		logging.String("queue", queueName),
+		logging.String("routingKey", routingKey),
+		logging.Int("workers", workers),
+	)
+
+	sem := make(chan struct{}, workers)
+	var inflight sync.WaitGroup
+	// Runs before the deferred ch.Close (LIFO): wait for handlers to finish so
+	// none acks on a torn-down channel.
+	defer inflight.Wait()
+
+	for {
+		select {
+		case <-c.ctx.Done():
+			return context.Canceled
+		case closeErr := <-chanClose:
+			if closeErr != nil {
+				return closeErr
+			}
+			return errors.New("rabbitmq: channel closed")
+		case msg, ok := <-msgs:
+			if !ok {
+				return errors.New("rabbitmq: message channel closed")
+			}
+			select {
+			case sem <- struct{}{}:
+			case <-c.ctx.Done():
+				return context.Canceled
+			case closeErr := <-chanClose:
+				if closeErr != nil {
+					return closeErr
+				}
+				return errors.New("rabbitmq: channel closed")
+			}
+			inflight.Add(1)
+			go func(delivery amqp.Delivery) {
+				defer inflight.Done()
+				defer func() { <-sem }()
+				c.handleDelivery(ch, queueName, routingKey, delivery, handler)
+			}(msg)
 		}
 	}
 }

@@ -279,6 +279,118 @@ func TestConsumerConsumeBodyDeliversBody(t *testing.T) {
 	}
 }
 
+func TestConsumerConsumeBodyConcurrentProcessesInParallel(t *testing.T) {
+	url := brokerURL(t)
+	conn := adminConn(t, url)
+	topo := newTopology(t, conn)
+
+	const total = 6
+	const workers = 3
+	var active atomic.Int32
+	var maxActive atomic.Int32
+	var processed atomic.Int32
+
+	consumer, err := rabbitmq.NewConsumer(
+		testContext(t),
+		rabbitmq.Config{
+			URL:           url,
+			Exchange:      topo.exchange,
+			PrefetchCount: 1, // ConsumeConcurrent must raise this to at least workers.
+		},
+	)
+	if err != nil {
+		t.Fatalf("NewConsumer: %v", err)
+	}
+	t.Cleanup(consumer.Close)
+
+	go func() {
+		_ = consumer.ConsumeBodyConcurrent(
+			topo.queue,
+			topo.routingKey,
+			workers,
+			func(_ context.Context, _ []byte) error {
+				now := active.Add(1)
+				for {
+					previous := maxActive.Load()
+					if now <= previous || maxActive.CompareAndSwap(previous, now) {
+						break
+					}
+				}
+				time.Sleep(150 * time.Millisecond)
+				active.Add(-1)
+				processed.Add(1)
+				return nil
+			},
+		)
+	}()
+	if !waitFor(t, func() bool { return queueHasConsumer(conn, topo.queue) }) {
+		t.Fatal("concurrent consumer did not start consuming its queue in time")
+	}
+
+	for i := range total {
+		publish(t, conn, topo.exchange, topo.routingKey, fmt.Appendf(nil, "m-%d", i))
+	}
+
+	if !waitFor(t, func() bool { return processed.Load() == total }) {
+		t.Fatalf("processed = %d, want %d", processed.Load(), total)
+	}
+	if got := maxActive.Load(); got < 2 {
+		t.Fatalf("max concurrent handlers = %d, want at least 2", got)
+	}
+	if !waitFor(t, func() bool { return queueDepth(t, conn, topo.queue) == 0 }) {
+		t.Errorf("queue depth = %d, want 0", queueDepth(t, conn, topo.queue))
+	}
+}
+
+func TestConsumerConsumeBodyConcurrentRetriesThenDeadLetters(t *testing.T) {
+	url := brokerURL(t)
+	conn := adminConn(t, url)
+	topo := newTopology(t, conn)
+
+	var attempts atomic.Int32
+	consumer, err := rabbitmq.NewConsumer(
+		testContext(t),
+		rabbitmq.Config{
+			URL:           url,
+			Exchange:      topo.exchange,
+			MaxRetries:    1,
+			PrefetchCount: 1,
+		},
+	)
+	if err != nil {
+		t.Fatalf("NewConsumer: %v", err)
+	}
+	t.Cleanup(consumer.Close)
+
+	go func() {
+		_ = consumer.ConsumeBodyConcurrent(
+			topo.queue,
+			topo.routingKey,
+			3,
+			func(context.Context, []byte) error {
+				attempts.Add(1)
+				return errors.New("always fails")
+			},
+		)
+	}()
+	if !waitFor(t, func() bool { return queueHasConsumer(conn, topo.queue) }) {
+		t.Fatal("concurrent consumer did not start consuming its queue in time")
+	}
+
+	publish(t, conn, topo.exchange, topo.routingKey, []byte("poison"))
+
+	if !waitFor(t, func() bool { return attempts.Load() == 2 }) {
+		t.Errorf("attempts = %d, want 2", attempts.Load())
+	}
+	dlq := topo.queue + ".dlq"
+	if !waitFor(t, func() bool { return queueDepth(t, conn, dlq) == 1 }) {
+		t.Errorf("dead-letter queue depth = %d, want 1", queueDepth(t, conn, dlq))
+	}
+	if depth := queueDepth(t, conn, topo.queue); depth != 0 {
+		t.Errorf("main queue depth = %d, want 0", depth)
+	}
+}
+
 func TestConsumerMaxRetriesZeroDeadLettersImmediately(t *testing.T) {
 	url := brokerURL(t)
 	conn := adminConn(t, url)
@@ -441,8 +553,11 @@ func TestNewConsumerHandlesNilContext(t *testing.T) {
 	conn := adminConn(t, url)
 	topo := newTopology(t, conn)
 
-	//nolint:staticcheck // Regression test for nil context guardrail.
-	consumer, err := rabbitmq.NewConsumer(nil, rabbitmq.Config{URL: url, Exchange: topo.exchange})
+	var nilContext context.Context
+	consumer, err := rabbitmq.NewConsumer(nilContext, rabbitmq.Config{
+		URL:      url,
+		Exchange: topo.exchange,
+	})
 	if err != nil {
 		t.Fatalf("NewConsumer with nil context: %v", err)
 	}
