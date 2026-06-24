@@ -8,8 +8,8 @@ github.com/Microsoft/go-winio v0.6.2 h1:F2VQgta7ecxGYO8k3ZZz3RS8fVIXVxONVUPlNERo
 github.com/Microsoft/go-winio v0.6.2/go.mod h1:yd8OoFMLzJbo9gZq8j5qaps8bJ9aShtEA8Ipt1oGCvU=
 github.com/Midwayne/rabbitmq-go v0.1.1 h1:TFceK/MEDvSN0zBHOhUlTiLH+DzOn8UkRTYFt+dN7ME=
 github.com/Midwayne/rabbitmq-go v0.1.1/go.mod h1:/X2CyJC6JvB12JHEr8zSj8bITbtGGK/XAo1a3TW/R9s=
-github.com/Midwayne/rabbitmq-go/pkg/otelrabbitmq v0.1.1 h1:Ktwyr3KQdpHP7fwmeIT5XzuO8pS3K+SZ56Hm1WJvoEA=
-github.com/Midwayne/rabbitmq-go/pkg/otelrabbitmq v0.1.1/go.mod h1:P1wt9Sf98bGnjJHprlKpD0RxHWOIwk3uVz4vH903hLA=
+github.com/Midwayne/rabbitmq-go/pkg/otelrabbitmq v0.1.2 h1:LhD1EeF0I1/UCmt4cVt94+oQl2//5OV93dsSHqlUqvQ=
+github.com/Midwayne/rabbitmq-go/pkg/otelrabbitmq v0.1.2/go.mod h1:P1wt9Sf98bGnjJHprlKpD0RxHWOIwk3uVz4vH903hLA=
 github.com/Shopify/toxiproxy/v2 v2.12.0 h1:d1x++lYZg/zijXPPcv7PH0MvHMzEI5aX/YuUi/Sw+yg=
 github.com/Shopify/toxiproxy/v2 v2.12.0/go.mod h1:R9Z38Pw6k2cGZWXHe7tbxjGW9azmY1KbDQJ1kd+h7Tk=
 github.com/cenkalti/backoff/v4 v4.3.0 h1:MyRJ/UdXutAwSAT+s3wNd7MfTIcy71VQueUuFK343L8=
