@@ -9,7 +9,7 @@ go 1.26.0
 toolchain go1.26.4
 
 require (
-	github.com/Midwayne/rabbitmq-go v0.1.1
+	github.com/Midwayne/rabbitmq-go v0.1.2
 	github.com/Midwayne/rabbitmq-go/pkg/otelrabbitmq v0.1.1
 	github.com/Shopify/toxiproxy/v2 v2.12.0
 	github.com/rabbitmq/amqp091-go v1.11.0
