@@ -18,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
@@ -34,7 +34,7 @@ jobs:
       matrix:
         module: ['.', 'pkg/otelrabbitmq', 'integration']
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v6
         with:
           go-version-file: ${{ matrix.module }}/go.mod
@@ -54,7 +54,7 @@ jobs:
       matrix:
         module: ['.', 'pkg/otelrabbitmq']
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v6
         with:
           go-version-file: ${{ matrix.module }}/go.mod
@@ -75,7 +75,7 @@ jobs:
       matrix:
         module: ['.', 'pkg/otelrabbitmq']
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v6
         with:
           go-version-file: ${{ matrix.module }}/go.mod
@@ -93,7 +93,7 @@ jobs:
       matrix:
         module: ['.', 'pkg/otelrabbitmq', 'integration']
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v6
         with:
           go-version-file: ${{ matrix.module }}/go.mod
@@ -111,7 +111,7 @@ jobs:
       matrix:
         module: ['.', 'pkg/otelrabbitmq', 'integration']
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v6
         with:
           go-version-file: ${{ matrix.module }}/go.mod
@@ -127,7 +127,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
@@ -139,7 +139,7 @@ jobs:
     runs-on: ubuntu-latest # GitHub-hosted runners ship Docker, which testcontainers needs.
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v6
         with:
           go-version-file: integration/go.mod
