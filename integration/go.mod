@@ -14,7 +14,7 @@ require (
 	github.com/Shopify/toxiproxy/v2 v2.12.0
 	github.com/rabbitmq/amqp091-go v1.11.0
 	github.com/testcontainers/testcontainers-go v0.43.0
-	github.com/testcontainers/testcontainers-go/modules/rabbitmq v0.42.0
+	github.com/testcontainers/testcontainers-go/modules/rabbitmq v0.43.0
 	github.com/testcontainers/testcontainers-go/modules/toxiproxy v0.43.0
 	go.opentelemetry.io/otel v1.44.0
 	go.opentelemetry.io/otel/sdk v1.44.0
